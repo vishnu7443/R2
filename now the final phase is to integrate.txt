@@ -1,0 +1,1 @@
+now the final phase is to integrate our vector software with the inventraerp project as they are our real client ok now 
