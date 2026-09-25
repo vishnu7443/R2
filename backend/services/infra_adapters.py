@@ -122,6 +122,46 @@ class MockKubernetesAdapter(BaseKubernetesAdapter):
                 "criticality": "Critical",
                 "pods": ["erp-db-pod-1"],
                 "status": "Healthy"
+            },
+            "payment-service": {
+                "name": "payment-service",
+                "replicas": 3,
+                "max_replicas": 8,
+                "cpu_limit": "500m",
+                "memory_limit": "512Mi",
+                "criticality": "Critical",
+                "pods": ["payment-service-pod-1", "payment-service-pod-2", "payment-service-pod-3"],
+                "status": "Healthy"
+            },
+            "auth-service": {
+                "name": "auth-service",
+                "replicas": 2,
+                "max_replicas": 6,
+                "cpu_limit": "300m",
+                "memory_limit": "256Mi",
+                "criticality": "High",
+                "pods": ["auth-service-pod-1", "auth-service-pod-2"],
+                "status": "Healthy"
+            },
+            "frontend-service": {
+                "name": "frontend-service",
+                "replicas": 3,
+                "max_replicas": 8,
+                "cpu_limit": "250m",
+                "memory_limit": "256Mi",
+                "criticality": "Medium",
+                "pods": ["frontend-service-pod-1", "frontend-service-pod-2", "frontend-service-pod-3"],
+                "status": "Healthy"
+            },
+            "database-service": {
+                "name": "database-service",
+                "replicas": 2,
+                "max_replicas": 4,
+                "cpu_limit": "1000m",
+                "memory_limit": "1024Mi",
+                "criticality": "Critical",
+                "pods": ["database-service-pod-1", "database-service-pod-2"],
+                "status": "Healthy"
             }
         }
 
@@ -133,6 +173,13 @@ class MockKubernetesAdapter(BaseKubernetesAdapter):
             self.workloads[service_name]["replicas"] = replicas
             # Re-generate pods list
             self.workloads[service_name]["pods"] = [f"{service_name}-pod-{i+1}" for i in range(replicas)]
+            # If remediating an Inventra ERP workload, also unfreeze the live Express server!
+            if service_name in ["erp-frontend", "erp-core", "erp-db", "erp-inventory"]:
+                try:
+                    import requests
+                    requests.post("http://localhost:5000/api/chaos/recover", timeout=1)
+                except Exception:
+                    pass
             return True
         return False
 
@@ -140,7 +187,12 @@ class MockKubernetesAdapter(BaseKubernetesAdapter):
         # Find which workload owns this pod and simulate a brief transition
         for service, config in self.workloads.items():
             if pod_name in config["pods"]:
-                # Simply simulating a success response
+                if service in ["erp-frontend", "erp-core", "erp-db", "erp-inventory"]:
+                    try:
+                        import requests
+                        requests.post("http://localhost:5000/api/chaos/recover", timeout=1)
+                    except Exception:
+                        pass
                 return True
         return False
 
@@ -151,6 +203,12 @@ class MockKubernetesAdapter(BaseKubernetesAdapter):
 
     def rollback_deployment(self, service_name: str, target_replicas: int) -> bool:
         return self.scale_deployment(service_name, target_replicas)
+
+    def inject_fault(self, service_name: str, fault_type: str) -> bool:
+        return True
+
+    def clear_fault(self, service_name: str) -> bool:
+        return True
 
 
 class MockMetricsAdapter(BaseMetricsAdapter):

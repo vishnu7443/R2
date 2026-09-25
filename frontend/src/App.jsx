@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import DigitalTwin from './pages/DigitalTwin';
 import Simulator from './pages/Simulator';
 import DecisionCenter from './pages/DecisionCenter';
+import RootCauseCenter from './pages/RootCauseCenter';
 import PolicyCenter from './pages/PolicyCenter';
 import Timeline from './pages/Timeline';
 import Footer from './components/Footer';
@@ -29,7 +30,7 @@ function AppContent() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const mode = localStorage.getItem('dashboardMode') || 'standard';
+        const mode = localStorage.getItem('dashboardMode') || 'inventraerp';
         const res = await fetch(`http://localhost:8000/api/dashboard?mode=${mode}`);
         if (res.ok) {
           const data = await res.json();
@@ -90,10 +91,14 @@ function AppContent() {
                 path="/dashboard" 
                 element={<Dashboard dashboardData={dashboardData} setDashboardData={setDashboardData} />} 
               />
+              <Route path="/rca" element={<RootCauseCenter />} />
+              <Route path="/root-cause" element={<RootCauseCenter />} />
               <Route path="/digital-twin" element={<DigitalTwin />} />
               <Route path="/simulator" element={<Simulator />} />
               <Route path="/decision" element={<DecisionCenter />} />
+              <Route path="/decision-center" element={<DecisionCenter />} />
               <Route path="/policies" element={<PolicyCenter />} />
+              <Route path="/policy-center" element={<PolicyCenter />} />
               <Route path="/timeline" element={<Timeline />} />
             </Routes>
           </main>

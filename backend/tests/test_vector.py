@@ -44,7 +44,7 @@ def test_mock_kubernetes_adapter():
     workloads = adapter.get_workloads()
     
     # Assert initial baseline configuration is loaded
-    assert len(workloads) == 8
+    assert len(workloads) == 12
     target_svc = next(w for w in workloads if w["name"] == "shop-frontend")
     assert target_svc["replicas"] == 3
     

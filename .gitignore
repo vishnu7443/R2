@@ -1,6 +1,11 @@
 # Dependencies
+**/node_modules/
 node_modules/
 */node_modules/
+
+# DB temporary locks
+*.db-shm
+*.db-wal
 
 # Python
 __pycache__/

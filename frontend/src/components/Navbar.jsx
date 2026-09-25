@@ -27,9 +27,10 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
 
   const links = [
     { name: 'Dashboard', path: '/dashboard' },
+    { name: 'Root Cause (RCA)', path: '/rca' },
+    { name: 'Decision Center', path: '/decision' },
     { name: 'Digital Twin', path: '/digital-twin' },
     { name: 'Simulator', path: '/simulator' },
-    { name: 'Decision Center', path: '/decision' },
     { name: 'Policy Center', path: '/policies' },
     { name: 'Timeline', path: '/timeline' }
   ];
@@ -41,35 +42,39 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '1.2rem 2.5rem',
+      padding: isLanding ? '1.2rem 2.5rem' : '0.8rem 1.5rem',
       backgroundColor: 'transparent',
       maxWidth: isLanding ? '100%' : '1440px',
       width: '100%',
       margin: '0 auto',
-      height: '84px',
-      borderBottom: isLanding ? '1px solid rgba(255, 255, 255, 0.05)' : 'none'
+      height: '76px',
+      borderBottom: isLanding ? '1px solid rgba(255, 255, 255, 0.05)' : 'none',
+      gap: '0.75rem',
+      boxSizing: 'border-box'
     }}>
       {/* Brand Logo Pill */}
-      <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+      <Link to="/" style={{ textDecoration: 'none', color: 'inherit', flexShrink: 0 }}>
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.5rem',
-          padding: '0.5rem 1.2rem',
+          gap: '0.6rem',
+          padding: '0.45rem 1.1rem',
           borderRadius: '30px',
           border: isLanding ? '1px solid rgba(255, 255, 255, 0.15)' : '1px solid rgba(25, 26, 35, 0.08)',
           backgroundColor: isLanding ? 'rgba(255, 255, 255, 0.02)' : '#ffffff',
           color: isLanding ? '#ffffff' : 'var(--color-dark)',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.01)',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.02)',
           fontWeight: 800,
-          fontSize: '1.15rem',
-          letterSpacing: '0.5px'
+          fontSize: '1.12rem',
+          letterSpacing: '-0.2px',
+          transition: 'transform 0.2s ease',
+          whiteSpace: 'nowrap'
         }}>
           <img 
             src="/Final_Logo-removebg-preview.png" 
             alt="Vector Logo" 
             style={{ 
-              height: '38px', 
+              height: '34px', 
               width: 'auto', 
               objectFit: 'contain',
               display: 'block'
@@ -84,27 +89,38 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
         <nav className="navbar-links" style={{
           display: 'flex',
           alignItems: 'center',
-          gap: '0.4rem',
-          padding: '0.3rem',
-          backgroundColor: 'rgba(25, 26, 35, 0.03)',
+          gap: '0.2rem',
+          padding: '0.25rem 0.35rem',
+          backgroundColor: 'rgba(25, 26, 35, 0.04)',
           borderRadius: '30px',
-          border: '1px solid rgba(25, 26, 35, 0.02)'
+          border: '1px solid rgba(25, 26, 35, 0.04)',
+          whiteSpace: 'nowrap',
+          flexShrink: 0
         }}>
           {links.map((link) => {
-            const isActive = currentPath === link.path;
+            const isActive = currentPath === link.path || 
+              (link.path === '/decision' && currentPath === '/decision-center') || 
+              (link.path === '/policies' && currentPath === '/policy-center') || 
+              (link.path === '/rca' && currentPath === '/root-cause');
             return (
               <Link
                 key={link.path}
                 to={link.path}
                 style={{
-                  padding: '0.5rem 1.2rem',
-                  borderRadius: '30px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '0.42rem 0.85rem',
+                  borderRadius: '24px',
                   textDecoration: 'none',
-                  fontSize: '0.85rem',
-                  fontWeight: isActive ? 700 : 500,
+                  fontSize: '0.82rem',
+                  fontWeight: isActive ? 700 : 600,
                   color: isActive ? '#ffffff' : 'var(--color-slate-700)',
                   background: isActive ? 'var(--color-dark)' : 'transparent',
-                  transition: 'all 0.2s ease'
+                  boxShadow: isActive ? '0 2px 8px rgba(25, 26, 35, 0.12)' : 'none',
+                  transition: 'all 0.18s ease',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  lineHeight: '1.2'
                 }}
               >
                 {link.name}
@@ -115,7 +131,7 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
       )}
 
       {/* Right Side Status Panel / Login CTA */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexShrink: 0, whiteSpace: 'nowrap' }}>
         {currentPath === '/' ? (
           <button
             onClick={() => navigate('/login')}
@@ -126,13 +142,15 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
               backgroundColor: 'var(--color-dark)',
               color: '#ffffff',
               fontWeight: 800,
-              fontSize: '0.8rem',
+              fontSize: '0.82rem',
               cursor: 'pointer',
               boxShadow: '0 4px 15px rgba(25, 26, 35, 0.1)',
               transition: 'all 0.2s ease',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.4rem'
+              gap: '0.4rem',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
             }}
             onMouseEnter={(e) => e.target.style.transform = 'translateY(-1px)'}
             onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
@@ -146,19 +164,23 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
             <div style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '0.5rem',
+              gap: '0.45rem',
               background: getStatusBgColor(),
-              border: `1px solid ${getStatusColor()}20`,
-              padding: '0.5rem 1rem',
+              border: `1px solid ${getStatusColor()}25`,
+              padding: '0.42rem 0.85rem',
               borderRadius: '30px',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
             }}>
               <span style={{
-                width: '8px',
-                height: '8px',
+                width: '7px',
+                height: '7px',
                 borderRadius: '50%',
-                backgroundColor: getStatusColor()
+                backgroundColor: getStatusColor(),
+                boxShadow: `0 0 6px ${getStatusColor()}`,
+                flexShrink: 0
               }} />
-              <span className="navbar-status-text" style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-dark)' }}>
+              <span className="navbar-status-text" style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-dark)', whiteSpace: 'nowrap' }}>
                 Cluster: {healthStatus} ({healthScore}%)
               </span>
             </div>
@@ -168,15 +190,16 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '38px',
-              height: '38px',
+              width: '36px',
+              height: '36px',
               borderRadius: '50%',
               border: '1px solid rgba(25, 26, 35, 0.08)',
               backgroundColor: alertsCount > 0 ? 'var(--color-rose)' : '#ffffff',
               color: alertsCount > 0 ? '#ffffff' : 'var(--color-dark)',
               cursor: 'pointer',
               transition: 'all 0.2s ease',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.01)'
+              boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+              flexShrink: 0
             }} title={`${alertsCount} Active Alerts`}>
               <ShieldAlert size={16} />
             </div>
@@ -186,47 +209,52 @@ export default function Navbar({ healthScore, healthStatus, alertsCount }) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              width: '38px',
-              height: '38px',
+              width: '36px',
+              height: '36px',
               borderRadius: '50%',
               border: '1px solid rgba(25, 26, 35, 0.08)',
               backgroundColor: '#ffffff',
               color: 'var(--color-dark)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.01)'
+              boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
+              flexShrink: 0
             }}>
               <User size={16} />
             </div>
 
-            {/* Quick Sign Out Action */}
+            {/* Global Sign Out Action */}
             <button
               onClick={() => {
                 localStorage.removeItem('clerkUser');
                 localStorage.removeItem('dashboardMode');
                 navigate('/login');
               }}
-              title="Sign Out"
+              title="Sign Out of Vector"
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.45rem 0.9rem',
+                gap: '0.45rem',
+                padding: '0.42rem 0.85rem',
                 borderRadius: '30px',
-                border: '1px solid rgba(244, 63, 94, 0.2)',
+                border: '1px solid rgba(244, 63, 94, 0.25)',
                 backgroundColor: '#ffffff',
                 color: '#f43f5e',
                 fontSize: '0.78rem',
                 fontWeight: 700,
                 cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.01)',
-                transition: 'all 0.2s ease'
+                boxShadow: '0 2px 8px rgba(244, 63, 94, 0.06)',
+                transition: 'all 0.2s ease',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.backgroundColor = '#fff1f2';
                 e.currentTarget.style.borderColor = '#f43f5e';
+                e.currentTarget.style.transform = 'translateY(-1px)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.backgroundColor = '#ffffff';
-                e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.2)';
+                e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.25)';
+                e.currentTarget.style.transform = 'translateY(0)';
               }}
             >
               <LogOut size={13} />

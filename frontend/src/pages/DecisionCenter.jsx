@@ -24,7 +24,7 @@ export default function DecisionCenter() {
   // Fetch threat predictions on mount and polling
   const fetchThreats = async () => {
     try {
-      const mode = localStorage.getItem('dashboardMode') || 'standard';
+      const mode = localStorage.getItem('dashboardMode') || 'inventraerp';
       const res = await fetch(`http://localhost:8000/api/predictions?mode=${mode}`);
       const data = await res.json();
       setPredictions(data);

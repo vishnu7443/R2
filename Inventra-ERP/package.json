@@ -1,0 +1,17 @@
+{
+  "name": "inventra-root",
+  "version": "1.0.0",
+  "description": "Root orchestrator for Inventra ERP Client and Server",
+  "scripts": {
+    "install-client": "npm install --prefix client",
+    "install-server": "npm install --prefix server",
+    "install-all": "npm install && npm run install-client && npm run install-server",
+    "dev-client": "npm run dev --prefix client",
+    "dev-server": "npm run dev --prefix server",
+    "dev": "concurrently \"npm run dev-client\" \"npm run dev-server\""
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2",
+    "dotenv": "^17.4.2"
+  }
+}

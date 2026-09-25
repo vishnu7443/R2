@@ -25,7 +25,7 @@ def get_dashboard_summary(mode: str = "standard", db: Session = Depends(get_db))
     if mode == "ecommerce":
         services = ["shop-frontend", "shop-auth", "shop-catalog", "shop-notifications"]
     elif mode == "inventraerp":
-        services = ["erp-frontend", "erp-db"]
+        services = ["erp-frontend", "erp-core", "erp-inventory", "erp-db"]
     else:
         services = ["payment-service", "auth-service", "frontend-service", "database-service"]
     latest_metrics = {}
@@ -88,6 +88,15 @@ def get_dashboard_summary(mode: str = "standard", db: Session = Depends(get_db))
     for sim in active_simulations.values():
         if sim.get("active"):
             health_score -= 10
+
+    # Reflect predictive drift/threat immediately on cluster health
+    try:
+        from ..services.prevention_engine import prevention_engine
+        if prevention_engine.live_state.get("drift_detected") and prevention_engine.live_state.get("preemption_status") != "PREEMPTED_SUCCESSFULLY":
+            health_score = min(health_score, 62)
+            alerts_count = max(alerts_count, 1)
+    except Exception:
+        pass
             
     health_score = max(10, health_score)
     
@@ -134,7 +143,7 @@ def get_active_alerts(mode: str = "standard", db: Session = Depends(get_db)):
     if mode == "ecommerce":
         services = ["shop-frontend", "shop-auth", "shop-catalog", "shop-notifications"]
     elif mode == "inventraerp":
-        services = ["erp-frontend", "erp-db"]
+        services = ["erp-frontend", "erp-core", "erp-inventory", "erp-db"]
     else:
         services = ["payment-service", "auth-service", "frontend-service", "database-service"]
 
@@ -233,11 +242,18 @@ def get_recent_decisions(mode: str = "standard", db: Session = Depends(get_db)):
     if not decisions:
         decisions = db.query(Decision).order_by(desc(Decision.timestamp)).limit(5).all()
 
+    from ..models import CandidateAction
     result = []
     for d in decisions:
+        cand = db.query(CandidateAction).filter(CandidateAction.id == d.candidate_id).first() if d.candidate_id else None
+        pred = db.query(Prediction).filter(Prediction.id == d.prediction_id).first() if d.prediction_id else None
+        action_name = cand.action_name if cand else (d.final_decision.replace("_", " ").title() if d.final_decision else "Automated Mitigation")
+        service_name = pred.service_name if pred else "cluster"
         result.append({
             "id": d.id,
             "time": d.timestamp.strftime("%H:%M:%S") if d.timestamp else "",
+            "action_name": action_name,
+            "service_name": service_name,
             "decision_score": d.decision_score,
             "final_decision": d.final_decision,
             "status": d.status

@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  role      String   @default("ADMIN")
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique
+  products Product[]
+}
+
+model Supplier {
+  id          Int        @id @default(autoincrement())
+  name        String
+  email       String?
+  phone       String?
+  address     String?
+  companyName String?
+  products    Product[]
+  purchases   Purchase[]
+}
+
+model Product {
+  id                    Int                    @id @default(autoincrement())
+  name                  String
+  sku                   String                 @unique
+  price                 Float
+  categoryId            Int
+  stock                 Int                    @default(0)
+  supplierId            Int
+  inventoryTransactions InventoryTransaction[]
+  category              Category               @relation(fields: [categoryId], references: [id])
+  supplier              Supplier               @relation(fields: [supplierId], references: [id])
+  purchaseItems         PurchaseItem[]
+  saleItems             SaleItem[]
+}
+
+model Customer {
+  id      Int     @id @default(autoincrement())
+  name    String
+  email   String?
+  phone   String?
+  address String?
+  sales   Sale[]
+}
+
+model Purchase {
+  id            Int            @id @default(autoincrement())
+  invoiceNumber String         @unique
+  supplierId    Int
+  totalAmount   Float
+  createdAt     DateTime       @default(now())
+  notes         String?
+  purchaseDate  DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  supplier      Supplier       @relation(fields: [supplierId], references: [id])
+  items         PurchaseItem[]
+}
+
+model PurchaseItem {
+  id         Int      @id @default(autoincrement())
+  purchaseId Int
+  productId  Int
+  quantity   Int
+  price      Float
+  subtotal   Float
+  product    Product  @relation(fields: [productId], references: [id])
+  purchase   Purchase @relation(fields: [purchaseId], references: [id])
+}
+
+model Sale {
+  id            Int        @id @default(autoincrement())
+  invoiceNumber String     @unique
+  customerId    Int
+  totalAmount   Float
+  createdAt     DateTime   @default(now())
+  status        String     @default("COMPLETED")
+  customer      Customer   @relation(fields: [customerId], references: [id])
+  items         SaleItem[]
+}
+
+model SaleItem {
+  id         Int     @id @default(autoincrement())
+  saleId     Int
+  productId  Int
+  quantity   Int
+  totalPrice Float
+  unitPrice  Float
+  product    Product @relation(fields: [productId], references: [id])
+  sale       Sale    @relation(fields: [saleId], references: [id])
+}
+
+model InventoryTransaction {
+  id        Int             @id @default(autoincrement())
+  productId Int
+  type      TransactionType
+  quantity  Int
+  remarks   String?
+  createdAt DateTime        @default(now())
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+enum TransactionType {
+  STOCK_IN
+  STOCK_OUT
+  ADJUSTMENT
+}

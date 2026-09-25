@@ -108,3 +108,69 @@ class Project(Base):
     github_repo = Column(String)
     vercel_project = Column(String)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class ChangeLogEvent(Base):
+    __tablename__ = "change_log_events"
+
+    id = Column(String, primary_key=True, index=True) # UUID
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+    event_type = Column(String, index=True) # DEPLOYMENT, CONFIG_CHANGE, POD_RESTART, SCHEMA_MIGRATION
+    service_name = Column(String, index=True)
+    author = Column(String, default="system")
+    details = Column(JSON) # e.g. {"version": "v2.4.1", "commit": "a8f10b", "env": "prod"}
+
+class RootCauseAnalysis(Base):
+    __tablename__ = "root_cause_analyses"
+
+    id = Column(String, primary_key=True, index=True) # UUID
+    incident_id = Column(String, index=True)
+    service_name = Column(String, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    root_cause_title = Column(String) # e.g. "Backend Thread-Pool Saturation"
+    confidence_score = Column(Float) # 0 to 100
+    primary_signal = Column(String) # e.g. "Resource Multi-Metric & Change Correlation"
+    signals_breakdown = Column(JSON) # {temporal: 92, dependency: 88, metric: 94, change: 81, historical: 76}
+    causal_chain = Column(JSON) # ["Traffic Surge", "API Request Rate High", "Thread Pool Saturation", "Response Latency High"]
+    evidence = Column(JSON) # list of human-readable bullet points
+    status = Column(String, default="IDENTIFIED") # IDENTIFIED, MITIGATING, RESOLVED
+
+class RemediationPlan(Base):
+    __tablename__ = "remediation_plans"
+
+    id = Column(String, primary_key=True, index=True) # UUID
+    rca_id = Column(String, ForeignKey("root_cause_analyses.id"))
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    recommended_action = Column(String)
+    category = Column(String) # Scaling, Restart, PoolResize, Throttling, Rollback
+    strategy_rationale = Column(String)
+    candidate_actions = Column(JSON) # Ranked list of candidates with pros/cons
+
+class VerificationResult(Base):
+    __tablename__ = "verification_results"
+
+    id = Column(String, primary_key=True, index=True) # UUID
+    execution_id = Column(String, ForeignKey("executions.id"))
+    service_name = Column(String, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    pre_metrics = Column(JSON) # {"cpu": 94.2, "latency_ms": 1840, "error_rate": 7.8}
+    post_metrics = Column(JSON) # {"cpu": 54.1, "latency_ms": 310, "error_rate": 0.1}
+    slo_thresholds = Column(JSON) # {"cpu_max": 70.0, "latency_max_ms": 500.0, "error_max": 1.0}
+    effectiveness_score = Column(Float) # 0 to 100
+    is_resolved = Column(Boolean)
+    recommend_rollback = Column(Boolean, default=False)
+    summary = Column(String)
+
+class IncidentKnowledgeItem(Base):
+    __tablename__ = "incident_knowledge_items"
+
+    id = Column(String, primary_key=True, index=True) # UUID
+    incident_id = Column(String, index=True)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+    service_name = Column(String, index=True)
+    symptoms = Column(JSON)
+    root_cause = Column(String)
+    action_executed = Column(String)
+    effectiveness_score = Column(Float)
+    resolution_time_seconds = Column(Integer)
+    verified = Column(Boolean, default=True)
+

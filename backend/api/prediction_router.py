@@ -22,9 +22,10 @@ def get_current_predictions(mode: str = "standard", db: Session = Depends(get_db
     if mode == "ecommerce":
         services = ["shop-frontend", "shop-auth", "shop-catalog", "shop-notifications"]
     elif mode == "inventraerp":
-        services = ["erp-frontend", "erp-db"]
+        services = ["erp-frontend", "erp-core", "erp-inventory", "erp-db"]
     else:
-        services = ["payment-service", "auth-service", "frontend-service", "database-service"]
+        # Standard/Default mode checks standard services and active Inventra ERP microservices
+        services = ["payment-service", "auth-service", "frontend-service", "database-service", "erp-frontend", "erp-core", "erp-db"]
     results = []
     
     for service in services:

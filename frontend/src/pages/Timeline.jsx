@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   History, Clock, ChevronDown, ChevronUp, Terminal, Shield, Zap, 
   AlertTriangle, TrendingUp, Search, Copy, Check, Server, RefreshCw, 
-  Activity, User, CheckCircle2
+  Activity, User, CheckCircle2, RotateCcw
 } from 'lucide-react';
 
 export default function Timeline() {

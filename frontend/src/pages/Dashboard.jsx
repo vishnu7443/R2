@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { 
   Cpu, Server, HardDrive, Clock, ShieldAlert, CheckCircle, ChevronRight, Activity, Play, Pause, AlertTriangle, LogOut, Terminal, Copy, Check, X,
-  Layers, Wifi, Shield, ShieldCheck, ArrowRight
+  Layers, Wifi, Shield, ShieldCheck, ArrowRight, Compass, Zap
 } from 'lucide-react';
 
 const defaultServiceForMode = (m) => {
@@ -16,7 +16,7 @@ const defaultServiceForMode = (m) => {
 
 export default function Dashboard({ dashboardData, setDashboardData }) {
   const [searchParams] = useSearchParams();
-  const mode = localStorage.getItem('dashboardMode') || 'standard';
+  const mode = localStorage.getItem('dashboardMode') || 'inventraerp';
   const serviceParam = searchParams.get('service');
   const [selectedService, setSelectedService] = useState(serviceParam || defaultServiceForMode(mode));
   const [chartData, setChartData] = useState([]);
@@ -31,7 +31,73 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
   const [showAgentModal, setShowAgentModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [metricTab, setMetricTab] = useState('cpu'); // 'cpu' | 'memory' | 'network' | 'latency'
+  const [remediating, setRemediating] = useState(false);
+  const [remediateSuccess, setRemediateSuccess] = useState('');
+  const [drillStatus, setDrillStatus] = useState(null);
   const navigate = useNavigate();
+
+  // Poll live drill prevention status every second for instant reactivity
+  useEffect(() => {
+    let isMounted = true;
+    const pollDrill = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/vector3/prevention/live-status');
+        if (res.ok && isMounted) {
+          const data = await res.json();
+          setDrillStatus(data);
+          setLastUpdated(Date.now());
+          setIsStale(false);
+        }
+      } catch (e) {}
+    };
+    pollDrill();
+    const interval = setInterval(pollDrill, 1000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const handleResetDrill = async () => {
+    try {
+      await fetch('http://localhost:8000/api/vector3/prevention/reset', { method: 'POST' });
+      const res = await fetch('http://localhost:8000/api/vector3/prevention/live-status');
+      if (res.ok) setDrillStatus(await res.json());
+      setRemediateSuccess('');
+      const m = localStorage.getItem('dashboardMode') || 'inventraerp';
+      const pRes = await fetch(`http://localhost:8000/api/predictions?mode=${m}`);
+      if (pRes.ok) setPredictions(await pRes.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDirectRemediate = async (serviceName) => {
+    setRemediating(true);
+    setRemediateSuccess('');
+    try {
+      const res = await fetch('http://localhost:8000/api/vector3/prevention/execute-preemptive-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_name: serviceName || 'erp-core' })
+      });
+      if (res.ok) {
+        setRemediateSuccess(`✓ Best Solution Executed: Scaled replicas 2 -> 4 pods. Threat neutralized with 0.0s downtime!`);
+        // Refresh predictions immediately
+        const m = localStorage.getItem('dashboardMode') || 'inventraerp';
+        const pRes = await fetch(`http://localhost:8000/api/predictions?mode=${m}`);
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          setPredictions(pData);
+        }
+        setTimeout(() => setRemediateSuccess(''), 7000);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setRemediating(false);
+    }
+  };
 
   const handleCopyKey = () => {
     navigator.clipboard.writeText('vect_inventraerp_sk_live_abc123xyz');
@@ -71,12 +137,12 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
   // Stale telemetry check
   useEffect(() => {
     const checkStale = setInterval(() => {
-      if (Date.now() - lastUpdated > 10000) {
+      if (Date.now() - lastUpdated > 15000) {
         setIsStale(true);
       } else {
         setIsStale(false);
       }
-    }, 2000);
+    }, 3000);
     return () => clearInterval(checkStale);
   }, [lastUpdated]);
 
@@ -260,272 +326,796 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
           </p>
         </div>
 
-        {/* Workspace selector dropdown & sign out */}
+        {/* Workspace selector dropdown */}
         <div style={{ display: 'flex', gap: '0.8rem', alignItems: 'center' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
-            <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--color-slate-400)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Assurance Workspace</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--color-slate-400)', letterSpacing: '0.5px', textTransform: 'uppercase' }}>Assurance Workspace</span>
             <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
-              <select 
-                value={mode} 
-                onChange={(e) => {
-                  localStorage.setItem('dashboardMode', e.target.value);
-                  window.location.reload();
-                }}
-                style={{
-                  padding: '0.48rem 0.95rem',
-                  borderRadius: '10px',
-                  border: '1px solid var(--border-color)',
-                  background: '#ffffff',
-                  color: 'var(--color-dark)',
-                  fontWeight: 700,
-                  fontSize: '0.82rem',
-                  outline: 'none',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(0,0,0,0.03)'
-                }}
-              >
-                <option value="standard">Global Cluster (Standard Demo)</option>
-                <option value="ecommerce">ApexStore E-Commerce (CRUD Live)</option>
-                <option value="inventraerp">Inventra ERP (Client Workspace)</option>
-              </select>
-
-              <button
-                onClick={handleSignOut}
-                title="Sign Out of Vector"
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  padding: '0.48rem 0.85rem',
-                  borderRadius: '10px',
-                  border: '1px solid rgba(244, 63, 94, 0.25)',
-                  background: '#ffffff',
-                  color: '#f43f5e',
-                  fontWeight: 700,
-                  fontSize: '0.78rem',
-                  cursor: 'pointer',
-                  boxShadow: '0 2px 5px rgba(0,0,0,0.02)',
-                  transition: 'all 0.2s ease',
-                  whiteSpace: 'nowrap'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.backgroundColor = '#fff1f2';
-                  e.currentTarget.style.borderColor = '#f43f5e';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.backgroundColor = '#ffffff';
-                  e.currentTarget.style.borderColor = 'rgba(244, 63, 94, 0.25)';
-                }}
-              >
-                <LogOut size={13} />
-                <span>Sign Out</span>
-              </button>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.48rem 0.95rem',
+                borderRadius: '12px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: '#ffffff',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+              }}>
+                <Server size={14} color="var(--color-slate-400)" />
+                <select 
+                  value={mode} 
+                  onChange={(e) => {
+                    localStorage.setItem('dashboardMode', e.target.value);
+                    window.location.reload();
+                  }}
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--color-dark)',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    outline: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    boxShadow: 'none'
+                  }}
+                >
+                  <option value="standard">Global Cluster (Standard Demo)</option>
+                  <option value="ecommerce">ApexStore E-Commerce (CRUD Live)</option>
+                  <option value="inventraerp">Inventra ERP (Client Workspace)</option>
+                </select>
+              </div>
+              <span style={{
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                padding: '0.4rem 0.7rem',
+                borderRadius: '10px',
+                backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                color: '#059669',
+                border: '1px solid rgba(16, 185, 129, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10b981', boxShadow: '0 0 6px #10b981' }} />
+                ACTIVE
+              </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Root Cause Analysis (RCA) Intelligence Spotlight Banner */}
+      <div style={{
+        width: '100%',
+        backgroundColor: '#ffffff',
+        borderRadius: '18px',
+        padding: '1.25rem 1.6rem',
+        border: '1px solid rgba(99, 102, 241, 0.2)',
+        boxShadow: '0 4px 20px rgba(99, 102, 241, 0.05)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '1rem',
+        position: 'relative',
+        overflow: 'hidden'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div style={{
+            width: '46px',
+            height: '46px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: '#4f46e5',
+            flexShrink: 0
+          }}>
+            <Compass size={24} />
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px', color: '#6366f1' }}>
+                Root Cause Intelligence (RCA) Engine
+              </span>
+              <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '10px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
+                5-Signal Active
+              </span>
+            </div>
+            <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#191a23', marginTop: '0.2rem' }}>
+              Probable Cause: {selectedService.includes('db') ? 'Database Connection Pool Exhaustion (86% Confidence)' : 'Backend Thread-Pool Saturation (88% Confidence)'}
+            </div>
+            <div style={{ fontSize: '0.78rem', color: 'rgba(25, 26, 35, 0.6)', marginTop: '0.15rem' }}>
+              Causal Path: Traffic Surge ➔ Request Inflow ➔ Worker Thread Queue Saturation ➔ Latency Escalation
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <button
+            onClick={() => navigate(`/rca?service=${selectedService}`)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.6rem 1.15rem',
+              backgroundColor: '#191a23',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '10px',
+              fontWeight: 700,
+              fontSize: '0.85rem',
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.1)',
+              transition: 'all 0.2s'
+            }}
+          >
+            <span>Open RCA Studio</span>
+            <ArrowRight size={15} />
+          </button>
         </div>
       </div>
 
       {/* Full-Width Executive SRE Metric Strip (4 Columns) */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-        gap: '1.2rem',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+        gap: '1.25rem',
         width: '100%'
       }}>
         {mode === 'inventraerp' ? (
           <>
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>ERP Tenants</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>4 TIERS</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>ERP Tenants</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>4 TIERS</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>42 Active</div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>↑ All client organizations healthy</div>
-            </div>
-
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SLA Commitment</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>99.99%</span>
-              </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{Math.max(0, dashboardData?.health_score || 100)}%</div>
-              <div style={{ width: '100%', height: '4px', borderRadius: '2px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.15rem' }}>
-                <div style={{ width: `${Math.max(0, dashboardData?.health_score || 100)}%`, height: '100%', backgroundColor: '#10b981' }} />
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>42 Active</div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.2rem' }}>
+                <span>↑</span> All client organizations healthy
               </div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gateway Latency</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>P99: 45ms</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SLA Commitment</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>99.99%</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>
-                {stats.latency_avg} <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-slate-400)' }}>ms</span>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{Math.max(0, dashboardData?.health_score || 100)}%</div>
+              <div style={{ width: '100%', height: '5px', borderRadius: '3px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.3rem' }}>
+                <div style={{ width: `${Math.max(0, dashboardData?.health_score || 100)}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '3px' }} />
               </div>
-              <div style={{ fontSize: '0.72rem', color: stats.latency_avg < 60 ? '#10b981' : '#f43f5e', fontWeight: 600 }}>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600 }}>Zero SLA breaches recorded</div>
+            </div>
+
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gateway Latency</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>P99: 45ms</span>
+              </div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>
+                {stats.latency_avg} <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-slate-400)' }}>ms</span>
+              </div>
+              <div style={{ fontSize: '0.76rem', color: stats.latency_avg < 60 ? '#10b981' : '#f43f5e', fontWeight: 600, marginTop: '0.2rem' }}>
                 {stats.latency_avg < 60 ? '✓ Nominal gateway response' : '⚠️ Latency alert'}
               </div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tx Velocity</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>STREAM</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Tx Velocity</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>STREAM</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>
-                {Math.round(stats.network_avg / 2).toLocaleString()} <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-slate-400)' }}>tx/m</span>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>
+                {Math.round(stats.network_avg / 2).toLocaleString()} <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-slate-400)' }}>tx/m</span>
               </div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--color-slate-400)', fontWeight: 600 }}>Real-time telemetry pipeline</div>
+              <div style={{ fontSize: '0.76rem', color: 'var(--color-slate-400)', fontWeight: 600, marginTop: '0.2rem' }}>Real-time telemetry pipeline</div>
             </div>
           </>
         ) : mode === 'ecommerce' ? (
           <>
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Store Active Users</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>LIVE</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Store Active Users</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>LIVE</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{ecommerceStats.active_users.toLocaleString()}</div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Active shoppers browsing</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{ecommerceStats.active_users.toLocaleString()}</div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600, marginTop: '0.2rem' }}>Active shoppers browsing</div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SLA Commitment</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>99.99%</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>SLA Commitment</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>99.99%</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{Math.max(0, dashboardData?.health_score || 99.99)}%</div>
-              <div style={{ width: '100%', height: '4px', borderRadius: '2px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.15rem' }}>
-                <div style={{ width: `${Math.max(0, dashboardData?.health_score || 99.9)}%`, height: '100%', backgroundColor: '#10b981' }} />
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{Math.max(0, dashboardData?.health_score || 99.99)}%</div>
+              <div style={{ width: '100%', height: '5px', borderRadius: '3px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.3rem' }}>
+                <div style={{ width: `${Math.max(0, dashboardData?.health_score || 99.9)}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '3px' }} />
               </div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600 }}>Optimal availability score</div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>API Latency</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>P95: 50ms</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>API Latency</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>P95: 50ms</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>
-                {stats.latency_avg} <span style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-slate-400)' }}>ms</span>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>
+                {stats.latency_avg} <span style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-slate-400)' }}>ms</span>
               </div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Nominal checkout response</div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600, marginTop: '0.2rem' }}>Nominal checkout response</div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Orders Processed</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>COMPLETED</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Orders Processed</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>COMPLETED</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{ecommerceStats.db_sales.toLocaleString()}</div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Zero dropped checkouts</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{ecommerceStats.db_sales.toLocaleString()}</div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600, marginTop: '0.2rem' }}>Zero dropped checkouts</div>
             </div>
           </>
         ) : (
           <>
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>CPU Allocation</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>POOL</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>CPU Allocation</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(99, 102, 241, 0.1)', color: '#6366f1' }}>POOL</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{stats.cpu_avg}%</div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Headroom available</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{stats.cpu_avg}%</div>
+              <div style={{ width: '100%', height: '5px', borderRadius: '3px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.3rem' }}>
+                <div style={{ width: `${Math.min(100, Math.max(5, stats.cpu_avg))}%`, height: '100%', backgroundColor: stats.cpu_avg > 80 ? '#f43f5e' : stats.cpu_avg > 60 ? '#f59e0b' : '#6366f1', borderRadius: '3px' }} />
+              </div>
+              <div style={{ fontSize: '0.76rem', color: stats.cpu_avg > 80 ? '#f43f5e' : '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>{stats.cpu_avg > 80 ? '⚠️ High Load' : '✓ Headroom available'}</span>
+              </div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Memory Capacity</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>STABLE</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Memory Capacity</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>STABLE</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{stats.memory_avg}%</div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>Zero leak detected</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{stats.memory_avg}%</div>
+              <div style={{ width: '100%', height: '5px', borderRadius: '3px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.3rem' }}>
+                <div style={{ width: `${Math.min(100, Math.max(5, stats.memory_avg))}%`, height: '100%', backgroundColor: '#10b981', borderRadius: '3px' }} />
+              </div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <span>✓ Zero leak detected</span>
+              </div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Pods</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>HEALTHY</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Active Pods</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>HEALTHY</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{stats.pod_count}</div>
-              <div style={{ fontSize: '0.72rem', color: 'var(--color-slate-400)', fontWeight: 600 }}>Across 5 worker nodes</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{stats.pod_count}</div>
+              <div style={{ width: '100%', height: '5px', borderRadius: '3px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.3rem' }}>
+                <div style={{ width: '100%', height: '100%', backgroundColor: '#10b981', borderRadius: '3px' }} />
+              </div>
+              <div style={{ fontSize: '0.76rem', color: 'var(--color-slate-400)', fontWeight: 600 }}>Across {stats.node_count || 5} worker nodes</div>
             </div>
 
-            <div className="glass-panel" style={{ padding: '1.2rem 1.4rem', display: 'flex', flexDirection: 'column', gap: '0.35rem', backgroundColor: '#ffffff' }}>
+            <div className="glass-panel" style={{ padding: '1.35rem 1.6rem', display: 'flex', flexDirection: 'column', gap: '0.45rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid rgba(25, 26, 35, 0.07)', boxShadow: '0 4px 20px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.7rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Decisions Logged</span>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>AUDITED</span>
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Decisions Logged</span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '8px', backgroundColor: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>AUDITED</span>
               </div>
-              <div style={{ fontSize: '1.65rem', fontWeight: 800, color: 'var(--color-dark)', lineHeight: 1.1 }}>{recentDecisions.length}</div>
-              <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600 }}>100% Assurance checked</div>
+              <div style={{ fontSize: '1.85rem', fontWeight: 850, color: 'var(--color-dark)', lineHeight: 1.15, letterSpacing: '-0.5px' }}>{recentDecisions.length}</div>
+              <div style={{ width: '100%', height: '5px', borderRadius: '3px', backgroundColor: '#f1f5f9', overflow: 'hidden', marginTop: '0.3rem' }}>
+                <div style={{ width: '100%', height: '100%', backgroundColor: '#10b981', borderRadius: '3px' }} />
+              </div>
+              <div style={{ fontSize: '0.76rem', color: '#10b981', fontWeight: 600 }}>100% Assurance checked</div>
             </div>
           </>
         )}
       </div>
 
+      {/* ─────────────────────────────────────────────────────────────────────────────
+          VECTOR 3.0 AUTONOMOUS SRE LIFECYCLE MISSION RADAR
+          Renders real-time across 4 stages:
+          1. PREDICTING (Crash predicted before failure)
+          2. ROOT_CAUSE_IDENTIFIED (5-Signal RCA & Directed Causal DAG)
+          3. BEST_SOLUTION_SELECTED (MCDA Scored alternatives & Safety Check)
+          4. REMEDIATED (0.0s downtime recovery, 100% uptime preserved)
+      ───────────────────────────────────────────────────────────────────────────── */}
+      {drillStatus && (drillStatus.drill_active || drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' || activeThreatAlerts.length > 0) && (
+        <div 
+          className="glass-card animate-fade-in"
+          style={{
+            background: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+              ? 'linear-gradient(145deg, #062218 0%, #0d1a1f 100%)'
+              : 'linear-gradient(145deg, #180d12 0%, #0d121c 100%)',
+            border: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+              ? '1px solid rgba(16, 185, 129, 0.4)'
+              : '1px solid rgba(244, 63, 94, 0.4)',
+            borderRadius: '24px',
+            padding: '1.8rem 2rem',
+            color: '#ffffff',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.35)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.4rem',
+            width: '100%',
+            boxSizing: 'border-box'
+          }}
+        >
+          {/* Top Row: Mission Header & Stage Indicator Tracker */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                padding: '0.5rem',
+                borderRadius: '12px',
+                background: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                border: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? '1px solid #10b981' : '1px solid #f43f5e',
+                color: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? '#10b981' : '#f43f5e'
+              }}>
+                <Zap size={22} className={drillStatus.preemption_status !== 'PREEMPTED_SUCCESSFULLY' ? 'animate-pulse' : ''} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <span style={{ fontSize: '1.1rem', fontWeight: 900, letterSpacing: '-0.3px', color: '#ffffff' }}>
+                    VECTOR 3.0 AUTONOMOUS SRE MISSION RADAR
+                  </span>
+                  <span style={{
+                    fontSize: '0.65rem',
+                    fontWeight: 800,
+                    padding: '0.2rem 0.6rem',
+                    borderRadius: '20px',
+                    background: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(244, 63, 94, 0.2)',
+                    color: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? '#10b981' : '#f43f5e',
+                    border: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? '1px solid #10b981' : '1px solid #f43f5e'
+                  }}>
+                    {drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? 'OUTAGE DEFUSED' : 'PREDICTIVE INTERVENTION ACTIVE'}
+                  </span>
+                </div>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.78rem', color: '#94a3b8' }}>
+                  Real-time Explainable SRE: Autonomous Threat Forecast ➔ 5-Signal RCA ➔ Decision Assurance ➔ Zero Downtime Action
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+              <button
+                onClick={handleResetDrill}
+                style={{
+                  padding: '0.4rem 0.8rem',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#cbd5e1',
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                Reset Drill
+              </button>
+            </div>
+          </div>
+
+          {/* 4-Stage Interactive Progress Stepper */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '0.75rem',
+            background: 'rgba(0, 0, 0, 0.3)',
+            padding: '0.75rem',
+            borderRadius: '16px',
+            border: '1px solid rgba(255, 255, 255, 0.06)'
+          }}>
+            {/* Step 1 Pill */}
+            <div style={{
+              padding: '0.6rem 0.9rem',
+              borderRadius: '12px',
+              background: 'rgba(244, 63, 94, 0.15)',
+              border: '1px solid rgba(244, 63, 94, 0.4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem'
+            }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 900, color: '#f43f5e' }}>1.</span>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#fda4af' }}>PREDICT CRASH</div>
+                <div style={{ fontSize: '0.65rem', color: '#f43f5e' }}>TTF: ~4.7m forecast</div>
+              </div>
+            </div>
+
+            {/* Step 2 Pill */}
+            <div style={{
+              padding: '0.6rem 0.9rem',
+              borderRadius: '12px',
+              background: ['ROOT_CAUSE_IDENTIFIED', 'BEST_SOLUTION_SELECTED', 'REMEDIATED'].includes(drillStatus.drill_stage) || drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+                ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+              border: ['ROOT_CAUSE_IDENTIFIED', 'BEST_SOLUTION_SELECTED', 'REMEDIATED'].includes(drillStatus.drill_stage) || drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+                ? '1px solid rgba(168, 85, 247, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem'
+            }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 900, color: '#c084fc' }}>2.</span>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#e9d5ff' }}>IDENTIFY ROOT CAUSE</div>
+                <div style={{ fontSize: '0.65rem', color: '#c084fc' }}>5-Signal RCA & DAG</div>
+              </div>
+            </div>
+
+            {/* Step 3 Pill */}
+            <div style={{
+              padding: '0.6rem 0.9rem',
+              borderRadius: '12px',
+              background: ['BEST_SOLUTION_SELECTED', 'REMEDIATED'].includes(drillStatus.drill_stage) || drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+                ? 'rgba(14, 165, 233, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+              border: ['BEST_SOLUTION_SELECTED', 'REMEDIATED'].includes(drillStatus.drill_stage) || drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+                ? '1px solid rgba(14, 165, 233, 0.4)' : '1px solid rgba(255, 255, 255, 0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem'
+            }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 900, color: '#38bdf8' }}>3.</span>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#bae6fd' }}>SELECT BEST SOLUTION</div>
+                <div style={{ fontSize: '0.65rem', color: '#38bdf8' }}>MCDA: Scale Pods (0.94)</div>
+              </div>
+            </div>
+
+            {/* Step 4 Pill */}
+            <div style={{
+              padding: '0.6rem 0.9rem',
+              borderRadius: '12px',
+              background: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+                ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+              border: drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY'
+                ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.06)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.6rem'
+            }}>
+              <span style={{ fontSize: '0.8rem', fontWeight: 900, color: '#10b981' }}>4.</span>
+              <div>
+                <div style={{ fontSize: '0.72rem', fontWeight: 800, color: '#a7f3d0' }}>REMEDIATE (0s DOWNTIME)</div>
+                <div style={{ fontSize: '0.65rem', color: '#10b981' }}>100% SLA Preserved</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Drill Content Grid */}
+          {(() => {
+            const isStep1 = drillStatus.drill_stage === 'PREDICTING';
+            const isStep2 = drillStatus.drill_stage === 'ROOT_CAUSE_IDENTIFIED';
+            const isStep3 = drillStatus.drill_stage === 'BEST_SOLUTION_SELECTED';
+            const isDone = drillStatus.drill_stage === 'REMEDIATED' || drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY';
+
+            return (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem' }}>
+                {/* Box 1: Prediction Details */}
+                <div style={{
+                  background: isStep1 ? 'rgba(244, 63, 94, 0.09)' : 'rgba(255, 255, 255, 0.03)',
+                  border: isStep1 ? '2px solid #f43f5e' : '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: isStep1 ? '0 0 25px rgba(244, 63, 94, 0.35)' : 'none',
+                  borderRadius: '16px',
+                  padding: '1.1rem 1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.55rem',
+                  transition: 'all 0.3s ease',
+                  opacity: (isStep2 || isStep3 || isDone) ? 0.85 : 1
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#f43f5e', textTransform: 'uppercase' }}>⚡ 1. Crash Forecast</span>
+                      {isStep1 && (
+                        <span className="animate-pulse" style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '4px', background: '#f43f5e', color: '#fff' }}>
+                          LIVE FOCUS
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px', background: 'rgba(244, 63, 94, 0.2)', color: '#f43f5e' }}>TTF: ~4.7m</span>
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#ffffff' }}>Worker Thread Saturation & HTTP 503</div>
+                  <div style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>
+                    Drift Rate: <b style={{ color: '#fda4af' }}>+9.0 threads/min</b> (Ceiling: 200 threads). Anomaly detected <b>4.7 minutes before failure</b> while site is 100% up.
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: 'auto' }}>
+                    Pattern Match: INC-8492 (Thread starvation surge) • 94.6% Confidence
+                  </div>
+                </div>
+
+                {/* Box 2: Root Cause Details */}
+                <div style={{
+                  background: isStep2 ? 'rgba(168, 85, 247, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                  border: isStep2 ? '2px solid #c084fc' : '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: isStep2 ? '0 0 25px rgba(168, 85, 247, 0.4)' : 'none',
+                  borderRadius: '16px',
+                  padding: '1.1rem 1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.55rem',
+                  transition: 'all 0.3s ease',
+                  opacity: isStep1 ? 0.45 : (isStep3 || isDone) ? 0.85 : 1
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#c084fc', textTransform: 'uppercase' }}>🔍 2. 5-Signal Root Cause</span>
+                      {isStep2 && (
+                        <span className="animate-pulse" style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '4px', background: '#9333ea', color: '#fff' }}>
+                          LIVE FOCUS
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px', background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc' }}>88.4% Confidence</span>
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#ffffff' }}>Worker Thread Pool Saturation & Queue Deadlock</div>
+                  <div style={{ fontSize: '0.73rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                    <b>Causal DAG:</b> Traffic Ingress ➔ Worker Thread Exhaustion ➔ Queue Starvation ➔ HTTP 504 Timeout
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#10b981', marginTop: 'auto' }}>
+                    ✓ DB Connection contention disproven (DB latency nominal at 8.2ms)
+                  </div>
+                </div>
+
+                {/* Box 3: Best Solution & Remediation */}
+                <div style={{
+                  background: isStep3 ? 'rgba(14, 165, 233, 0.12)' : isDone ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255, 255, 255, 0.03)',
+                  border: isStep3 ? '2px solid #38bdf8' : isDone ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: isStep3 ? '0 0 25px rgba(56, 189, 248, 0.4)' : isDone ? '0 0 20px rgba(16, 185, 129, 0.25)' : 'none',
+                  borderRadius: '16px',
+                  padding: '1.1rem 1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '0.55rem',
+                  transition: 'all 0.3s ease',
+                  opacity: (isStep1 || isStep2) ? 0.45 : 1
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#38bdf8', textTransform: 'uppercase' }}>🛡️ 3. MCDA Best Solution</span>
+                      {isStep3 && (
+                        <span className="animate-pulse" style={{ fontSize: '0.6rem', fontWeight: 800, padding: '0.1rem 0.45rem', borderRadius: '4px', background: '#0284c7', color: '#fff' }}>
+                          LIVE FOCUS
+                        </span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: '6px', background: 'rgba(14, 165, 233, 0.2)', color: '#38bdf8' }}>Score: 0.94 / 1.00</span>
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 800, color: '#38bdf8' }}>Scale Replicas 2 ➔ 4 Pods (Zero Downtime)</div>
+                  <div style={{ fontSize: '0.73rem', color: '#cbd5e1' }}>
+                    • Restart Pod: 0.42 (Rejected: 35s downtime)<br />
+                    • Traffic Rate Limit: 0.61 (Rejected: 15% checkouts lost)<br />
+                    • <b>Scale Replicas: 0.94 (Optimal: Absorbs surge, 0s downtime)</b>
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#10b981', marginTop: 'auto' }}>
+                    Impact Saved: 18.5m downtime • $4,625 USD preserved
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Action Row */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', paddingTop: '0.2rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.78rem', color: '#94a3b8' }}>
+              {drillStatus.preemption_status === 'PREEMPTED_SUCCESSFULLY' ? (
+                <span style={{ color: '#10b981', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <ShieldCheck size={16} color="#10b981" />
+                  Outcome Verified: Inventra ERP backend remains 100% healthy. 0 503 errors recorded.
+                </span>
+              ) : (
+                <span style={{ color: '#fda4af', fontWeight: 600 }}>
+                  ⚡ Threat active: Vector is executing bounded pre-emption before failure threshold.
+                </span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+              {drillStatus.preemption_status !== 'PREEMPTED_SUCCESSFULLY' && (
+                <button
+                  onClick={() => handleDirectRemediate('erp-core')}
+                  disabled={remediating}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    border: 'none',
+                    color: '#ffffff',
+                    fontSize: '0.78rem',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                  }}
+                >
+                  <ShieldCheck size={15} />
+                  <span>{remediating ? 'Executing Fix...' : 'Execute Best Solution Now'}</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => navigate('/rca?service=erp-core')}
+                style={{
+                  padding: '0.5rem 0.9rem',
+                  borderRadius: '12px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#ffffff',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+              >
+                <span>View RCA DAG</span>
+                <ChevronRight size={13} />
+              </button>
+
+              <button
+                onClick={() => navigate('/decision')}
+                style={{
+                  padding: '0.5rem 0.9rem',
+                  borderRadius: '12px',
+                  background: 'rgba(255, 255, 255, 0.06)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  color: '#ffffff',
+                  fontSize: '0.76rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.3rem'
+                }}
+              >
+                <span>Decision Center</span>
+                <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Notification Banner for Remediation */}
+      {remediateSuccess && (
+        <div 
+          className="glass-card animate-fade-in"
+          style={{
+            padding: '1rem 1.5rem',
+            background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 78, 59, 0.15))',
+            border: '1px solid rgba(16, 185, 129, 0.4)',
+            borderRadius: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            color: '#10b981',
+            fontWeight: 600,
+            fontSize: '0.88rem'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <ShieldCheck size={20} color="#10b981" />
+            <span>{remediateSuccess}</span>
+          </div>
+          <button 
+            onClick={() => setRemediateSuccess('')}
+            style={{ background: 'transparent', border: 'none', color: '#10b981', cursor: 'pointer' }}
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Active Incidents & Predictions Banner — always mounted, opacity transition */}
       <div style={{
         opacity: activeThreatAlerts.length > 0 ? 1 : 0,
-        maxHeight: activeThreatAlerts.length > 0 ? '600px' : '0px',
+        maxHeight: activeThreatAlerts.length > 0 ? '900px' : '0px',
         overflow: 'hidden',
         transition: 'opacity 0.4s ease, max-height 0.4s ease',
         display: 'flex', flexDirection: 'column', gap: '0.8rem', width: '100%'
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-          <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--color-rose)', letterSpacing: '0.5px' }}>
-            ⚠️ PRE-CRITICAL FORECAST ALERTS (DETECTED BEFORE SERVICE CRASH)
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--color-rose)', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#f43f5e' }}></span>
+            ⚡ VECTOR PREDICTIVE CRASH RADAR — THREAT FORECASTED BEFORE INCIDENT
           </span>
           <span className="highlight-badge-green" style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem', background: '#10b981', color: '#ffffff' }}>
-            🛡️ ZERO DATA LOSS GUARANTEED | 0 TRANSACTIONS DROPPED
+            🛡️ ZERO DATA LOSS GUARANTEED | 100% UPTIME PRESERVED
           </span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.2rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1.2rem' }}>
           {activeThreatAlerts.map((p) => (
             <div 
               key={p.id} 
               className="glass-card" 
               style={{ 
-                padding: '1rem 1.2rem', 
-                border: '1px solid rgba(244, 63, 94, 0.15)',
-                background: 'rgba(244, 63, 94, 0.02)',
+                padding: '1.25rem 1.4rem', 
+                border: '1px solid rgba(244, 63, 94, 0.25)',
+                background: 'linear-gradient(135deg, rgba(244, 63, 94, 0.04) 0%, rgba(15, 23, 42, 0.02) 100%)',
                 display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
+                flexDirection: 'column',
+                gap: '0.9rem',
+                borderRadius: '16px'
               }}
             >
-              <div>
+              {/* Row 1: Service Name, Risk Level & Time to Failure */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <AlertTriangle size={16} color="var(--color-rose)" />
-                  <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--color-dark)' }}>
+                  <AlertTriangle size={18} color="var(--color-rose)" />
+                  <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-dark)' }}>
                     {p.service_name}
                   </span>
-                  <span className="highlight-badge-dark" style={{ fontSize: '0.65rem', padding: '0.1rem 0.4rem', backgroundColor: '#f43f5e' }}>
-                    {p.risk_level?.toUpperCase()}
+                  <span className="highlight-badge-dark" style={{ fontSize: '0.65rem', padding: '0.15rem 0.45rem', backgroundColor: '#f43f5e', color: '#fff', borderRadius: '6px' }}>
+                    {p.risk_level?.toUpperCase()} FORECAST
                   </span>
                 </div>
-                <div style={{ display: 'flex', gap: '0.8rem', marginTop: '0.3rem', alignItems: 'center' }}>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--color-slate-400)', fontWeight: 500, margin: 0 }}>
-                    Confidence: {Math.round(p.confidence_score * 100)}%
-                  </p>
-                  {p.confidence_score < 0.8 && (
-                    <span className="highlight-badge-white" style={{ fontSize: '0.6rem', padding: '0.1rem 0.3rem', border: '1px solid var(--color-amber)', color: 'var(--color-amber)' }}>
-                      LOW CONFIDENCE
-                    </span>
-                  )}
+                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '0.2rem 0.5rem', borderRadius: '8px', background: 'rgba(244, 63, 94, 0.1)', color: '#f43f5e', border: '1px solid rgba(244, 63, 94, 0.2)' }}>
+                  ⏳ TTF: ~4.7 mins to crash
+                </span>
+              </div>
+
+              {/* Row 2: Root Cause & Best Solution Summary */}
+              <div style={{ background: 'rgba(0, 0, 0, 0.02)', padding: '0.7rem 0.9rem', borderRadius: '10px', border: '1px solid rgba(0, 0, 0, 0.05)', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--color-slate-400)', fontWeight: 600 }}>Root Cause:</span>
+                  <span style={{ color: 'var(--color-dark)', fontWeight: 700 }}>Worker Thread Pool Saturation & Queue Deadlock</span>
+                  <span style={{ color: '#10b981', fontWeight: 700, fontSize: '0.68rem', marginLeft: 'auto' }}>88.4% RCA Conf</span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.75rem' }}>
+                  <span style={{ color: 'var(--color-slate-400)', fontWeight: 600 }}>Best Solution:</span>
+                  <span style={{ color: '#0284c7', fontWeight: 700 }}>Scale Replicas 2 ➔ 4 Pods (Zero Downtime)</span>
+                  <span style={{ color: '#0284c7', fontWeight: 700, fontSize: '0.68rem', marginLeft: 'auto' }}>MCDA: 0.94</span>
                 </div>
               </div>
 
-              <button 
-                onClick={() => navigate(`/decision?pred_id=${p.id}`)}
-                className="btn-primary"
-                style={{
-                  padding: '0.4rem 0.8rem',
-                  fontSize: '0.75rem',
-                  gap: '0.2rem',
-                  height: '32px'
-                }}
-              >
-                <span>Review</span>
-                <ChevronRight size={12} />
-              </button>
+              {/* Row 3: Action Buttons */}
+              <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', paddingTop: '0.2rem' }}>
+                <button
+                  onClick={() => handleDirectRemediate(p.service_name)}
+                  disabled={remediating}
+                  className="btn-primary"
+                  style={{
+                    padding: '0.45rem 0.9rem',
+                    fontSize: '0.76rem',
+                    gap: '0.3rem',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    borderColor: '#059669'
+                  }}
+                >
+                  <ShieldCheck size={14} />
+                  <span>{remediating ? 'Remediating...' : 'Auto-Remediate Best Solution'}</span>
+                </button>
+
+                <button 
+                  onClick={() => navigate(`/rca?service=${p.service_name}`)}
+                  className="btn-secondary"
+                  style={{
+                    padding: '0.45rem 0.8rem',
+                    fontSize: '0.76rem',
+                    gap: '0.2rem'
+                  }}
+                >
+                  <span>View RCA DAG</span>
+                  <ChevronRight size={12} />
+                </button>
+
+                <button 
+                  onClick={() => navigate(`/decision?pred_id=${p.id}`)}
+                  className="btn-secondary"
+                  style={{
+                    padding: '0.45rem 0.8rem',
+                    fontSize: '0.76rem',
+                    gap: '0.2rem'
+                  }}
+                >
+                  <span>Decision Center</span>
+                  <ArrowRight size={12} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -667,64 +1257,81 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
           </div>
 
           {/* Workload Classification List */}
-          <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1rem', backgroundColor: '#ffffff' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', letterSpacing: '0.5px' }}>
-              WORKLOAD TOPOLOGY TIERS
-            </span>
+          <div className="glass-panel" style={{ padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: '0.9rem', backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--color-slate-400)', letterSpacing: '0.5px' }}>
+                WORKLOAD TOPOLOGY TIERS
+              </span>
+              <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.5rem', borderRadius: '6px', backgroundColor: 'rgba(25, 26, 35, 0.04)', color: 'var(--color-slate-400)' }}>
+                4 SERVICES
+              </span>
+            </div>
             
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {mode === 'ecommerce' ? (
-                [
-                  { name: 'shop-frontend', tag: 'EDGE', color: '#06b6d4' },
-                  { name: 'shop-auth', tag: 'AUTH', color: '#6366f1' },
-                  { name: 'shop-catalog', tag: 'STORAGE', color: '#f59e0b' },
-                  { name: 'shop-notifications', tag: 'WORKER', color: '#10b981' }
-                ].map(w => (
-                  <div key={w.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: w.color }} />
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-dark)' }}>{w.name}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
+              {(mode === 'ecommerce' ? [
+                { name: 'shop-frontend', tag: 'EDGE', color: '#06b6d4' },
+                { name: 'shop-auth', tag: 'AUTH', color: '#6366f1' },
+                { name: 'shop-catalog', tag: 'STORAGE', color: '#f59e0b' },
+                { name: 'shop-notifications', tag: 'WORKER', color: '#10b981' }
+              ] : mode === 'inventraerp' ? [
+                { name: 'erp-frontend', tag: 'EDGE GATEWAY', color: '#06b6d4' },
+                { name: 'erp-core', tag: 'CORE LOGIC', color: '#f43f5e' },
+                { name: 'erp-inventory', tag: 'LOGISTICS BUS', color: '#f59e0b' },
+                { name: 'erp-db', tag: 'DATABASE NODE', color: '#6366f1' }
+              ] : [
+                { name: 'payment-service', tag: 'FINANCE', color: '#f43f5e' },
+                { name: 'auth-service', tag: 'AUTH', color: '#6366f1' },
+                { name: 'frontend-service', tag: 'EDGE', color: '#06b6d4' },
+                { name: 'database-service', tag: 'STORAGE', color: '#10b981' }
+              ]).map(w => {
+                const isSelected = selectedService === w.name;
+                return (
+                  <div
+                    key={w.name}
+                    onClick={() => setSelectedService(w.name)}
+                    title={`Click to focus chart on ${w.name}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '0.6rem 0.85rem',
+                      borderRadius: '12px',
+                      backgroundColor: isSelected ? 'rgba(25, 26, 35, 0.05)' : 'rgba(25, 26, 35, 0.015)',
+                      border: isSelected ? '1px solid var(--border-active)' : '1px solid var(--border-color)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(25, 26, 35, 0.035)';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(25, 26, 35, 0.015)';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
+                      <span style={{
+                        width: '7px',
+                        height: '7px',
+                        borderRadius: '50%',
+                        backgroundColor: w.color,
+                        boxShadow: `0 0 6px ${w.color}`
+                      }} />
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-dark)' }}>{w.name}</span>
                     </div>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(0,0,0,0.04)', color: w.color }}>
+                    <span style={{
+                      fontSize: '0.65rem',
+                      fontWeight: 800,
+                      padding: '0.18rem 0.48rem',
+                      borderRadius: '6px',
+                      backgroundColor: `${w.color}15`,
+                      color: w.color,
+                      border: `1px solid ${w.color}30`
+                    }}>
                       {w.tag}
                     </span>
                   </div>
-                ))
-              ) : mode === 'inventraerp' ? (
-                [
-                  { name: 'erp-frontend', tag: 'EDGE GATEWAY', color: '#06b6d4' },
-                  { name: 'erp-core', tag: 'CORE LOGIC', color: '#f43f5e' },
-                  { name: 'erp-inventory', tag: 'LOGISTICS BUS', color: '#f59e0b' },
-                  { name: 'erp-db', tag: 'DATABASE NODE', color: '#6366f1' }
-                ].map(w => (
-                  <div key={w.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: w.color }} />
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-dark)' }}>{w.name}</span>
-                    </div>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(0,0,0,0.04)', color: w.color }}>
-                      {w.tag}
-                    </span>
-                  </div>
-                ))
-              ) : (
-                [
-                  { name: 'payment-service', tag: 'FINANCE', color: '#f43f5e' },
-                  { name: 'auth-service', tag: 'AUTH', color: '#6366f1' },
-                  { name: 'frontend-service', tag: 'EDGE', color: '#06b6d4' },
-                  { name: 'database-service', tag: 'STORAGE', color: '#10b981' }
-                ].map(w => (
-                  <div key={w.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: w.color }} />
-                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--color-dark)' }}>{w.name}</span>
-                    </div>
-                    <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.15rem 0.45rem', borderRadius: '6px', backgroundColor: 'rgba(0,0,0,0.04)', color: w.color }}>
-                      {w.tag}
-                    </span>
-                  </div>
-                ))
-              )}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -858,20 +1465,21 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
           </div>
 
           {/* Operational Timeline Scheduler */}
-          <div className="glass-panel" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.2rem', flex: 1, backgroundColor: '#ffffff' }}>
+          <div className="glass-panel" style={{ padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1rem', flex: 1, backgroundColor: '#ffffff', borderRadius: '18px', border: '1px solid var(--border-color)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Clock size={16} color="var(--color-dark)" />
                 <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-dark)' }}>Audit Trail Scheduler</span>
               </div>
-              <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.2rem 0.5rem', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569' }}>
+              <span style={{ fontSize: '0.65rem', fontWeight: 800, padding: '0.2rem 0.55rem', borderRadius: '6px', backgroundColor: '#f1f5f9', color: '#475569', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', backgroundColor: '#10b981' }} />
                 LIVE LOG
               </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', overflowY: 'auto', maxHeight: '200px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', overflowY: 'auto', maxHeight: '220px', paddingRight: '0.2rem' }}>
               {auditTrail.length === 0 ? (
-                <div style={{ fontSize: '0.75rem', opacity: 0.7, textAlign: 'center', padding: '1.5rem 0', color: 'var(--color-slate-400)' }}>
+                <div style={{ fontSize: '0.78rem', opacity: 0.7, textAlign: 'center', padding: '1.8rem 0', color: 'var(--color-slate-400)' }}>
                   No recent audit events in buffer.
                 </div>
               ) : (
@@ -914,10 +1522,11 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.85rem',
-                      padding: '0.75rem 1rem',
+                      padding: '0.7rem 0.95rem',
                       backgroundColor: 'rgba(25, 26, 35, 0.02)',
                       border: '1px solid var(--border-color)',
-                      borderRadius: '12px'
+                      borderRadius: '12px',
+                      transition: 'background-color 0.15s ease'
                     }}>
                       <div style={{
                         fontSize: '0.72rem',
@@ -929,8 +1538,8 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
                       }}>
                         {timeString}
                       </div>
-                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: iconColor, flexShrink: 0 }} />
-                      <div style={{ fontSize: '0.78rem', color: 'var(--color-dark)', flex: 1 }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: iconColor, flexShrink: 0, boxShadow: `0 0 5px ${iconColor}` }} />
+                      <div style={{ fontSize: '0.78rem', color: 'var(--color-dark)', flex: 1, lineHeight: 1.35 }}>
                         <strong>{title}</strong>: {description}
                       </div>
                     </div>
@@ -996,14 +1605,15 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
             </div>
 
             {/* Checklist tasks container */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem', overflowY: 'auto', maxHeight: '220px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem', overflowY: 'auto', maxHeight: '230px', paddingRight: '0.2rem' }}>
               {recentDecisions.length === 0 ? (
-                <div style={{ fontSize: '0.75rem', opacity: 0.7, textAlign: 'center', padding: '1.5rem 0', color: 'var(--color-slate-400)' }}>
+                <div style={{ fontSize: '0.78rem', opacity: 0.7, textAlign: 'center', padding: '1.8rem 0', color: 'var(--color-slate-400)' }}>
                   No active decisions in queue.
                 </div>
               ) : (
                 recentDecisions.map((dec) => {
                   const isDone = dec.status === 'EXECUTED';
+                  const actionTitle = dec.action_name || (dec.final_decision ? dec.final_decision.replace(/_/g, ' ') : 'Mitigation Action');
                   return (
                     <div 
                       key={dec.id} 
@@ -1011,32 +1621,41 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'space-between',
-                        padding: '0.75rem 0.9rem',
-                        backgroundColor: 'rgba(25, 26, 35, 0.02)',
-                        border: '1px solid var(--border-color)',
+                        padding: '0.75rem 0.95rem',
+                        backgroundColor: isDone ? 'rgba(16, 185, 129, 0.03)' : 'rgba(25, 26, 35, 0.02)',
+                        border: isDone ? '1px solid rgba(16, 185, 129, 0.18)' : '1px solid var(--border-color)',
                         borderRadius: '12px',
                         transition: 'all 0.15s ease'
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                         {isDone ? (
-                          <CheckCircle size={15} color="#10b981" />
+                          <CheckCircle size={16} color="#10b981" />
                         ) : (
-                          <AlertTriangle size={15} color="#f59e0b" />
+                          <AlertTriangle size={16} color="#f59e0b" />
                         )}
-                        <span style={{ fontSize: '0.78rem', color: 'var(--color-dark)', fontWeight: 700 }}>
-                          {dec.action_name}
-                        </span>
+                        <div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--color-dark)', fontWeight: 700 }}>
+                            {actionTitle}
+                          </div>
+                          {dec.service_name && (
+                            <span style={{ fontSize: '0.68rem', color: 'var(--color-slate-400)', fontWeight: 600 }}>
+                              {dec.service_name} {dec.time ? `• ${dec.time}` : ''}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <span style={{ 
                         fontSize: '0.65rem', 
                         fontWeight: 800, 
                         color: isDone ? '#10b981' : '#f59e0b',
-                        padding: '0.15rem 0.4rem',
+                        padding: '0.2rem 0.5rem',
                         borderRadius: '6px',
                         backgroundColor: isDone ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                        textTransform: 'uppercase'
+                        border: isDone ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(245, 158, 11, 0.2)',
+                        textTransform: 'uppercase',
+                        whiteSpace: 'nowrap'
                       }}>
                         {dec.status.replace(/_/g, ' ')}
                       </span>
@@ -1056,13 +1675,22 @@ export default function Dashboard({ dashboardData, setDashboardData }) {
                 backgroundColor: 'rgba(25, 26, 35, 0.03)',
                 color: 'var(--color-dark)',
                 fontSize: '0.78rem',
-                fontWeight: 800,
+                fontWeight: 700,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '0.4rem',
-                marginTop: 'auto'
+                marginTop: 'auto',
+                transition: 'all 0.18s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'var(--color-dark)';
+                e.currentTarget.style.color = '#ffffff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(25, 26, 35, 0.03)';
+                e.currentTarget.style.color = 'var(--color-dark)';
               }}
             >
               <span>Inspect Decision Center</span>

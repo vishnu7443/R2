@@ -21,7 +21,11 @@ BASELINES = {
     "erp-frontend": {"cpu": 20.0, "memory": 30.0, "network": 1500.0, "latency": 40.0},
     "erp-core": {"cpu": 35.0, "memory": 50.0, "network": 2200.0, "latency": 25.0},
     "erp-inventory": {"cpu": 15.0, "memory": 25.0, "network": 600.0, "latency": 12.0},
-    "erp-db": {"cpu": 40.0, "memory": 60.0, "network": 800.0, "latency": 8.0}
+    "erp-db": {"cpu": 40.0, "memory": 60.0, "network": 800.0, "latency": 8.0},
+    "payment-service": {"cpu": 28.5, "memory": 42.0, "network": 1850.0, "latency": 32.0},
+    "auth-service": {"cpu": 22.0, "memory": 35.0, "network": 920.0, "latency": 18.0},
+    "frontend-service": {"cpu": 25.0, "memory": 30.0, "network": 2400.0, "latency": 24.0},
+    "database-service": {"cpu": 38.0, "memory": 58.0, "network": 1400.0, "latency": 12.0}
 }
 
 k8s_adapter = get_kubernetes_adapter()

@@ -244,6 +244,7 @@ select option {
 /* Range input (governance) */
 input[type="range"] {
   -webkit-appearance: none;
+  appearance: none;
   width: 100%;
   background: transparent;
 }
@@ -344,6 +345,28 @@ input[type="range"]::-webkit-slider-thumb:hover {
     position: static !important;
     max-height: 350px !important;
   }
+}
+
+/* Global Navbar Anti-Wrapping Rules */
+.navbar-header {
+  box-sizing: border-box;
+}
+
+.navbar-links {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+
+.navbar-links a {
+  white-space: nowrap !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  flex-shrink: 0 !important;
+  line-height: 1.2 !important;
+}
+
+.navbar-status-text {
+  white-space: nowrap !important;
 }
 
 @media (max-width: 768px) {
